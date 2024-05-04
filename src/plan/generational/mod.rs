@@ -25,6 +25,8 @@ pub mod barrier;
 pub mod copying;
 /// Generational immix (GenImmix)
 pub mod immix;
+/// Generational marksweep (GenMS)
+pub mod marksweep;
 
 // Common generational code
 
