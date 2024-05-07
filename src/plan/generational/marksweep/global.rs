@@ -1,4 +1,4 @@
-use crate::plan::global::CreateSpecificPlanArgs;
+use crate::plan::global::{CommonPlan, CreateSpecificPlanArgs};
 use crate::plan::{CreateGeneralPlanArgs, GenerationalPlan};
 use crate::policy::marksweepspace::native_ms::MarkSweepSpace;
 use crate::policy::space::Space;
@@ -9,6 +9,8 @@ use crate::{plan::PlanConstraints, vm::VMBinding};
 use crate::plan::generational::global::{CommonGenPlan, GenerationalPlanExt};
 
 use mmtk_macros::{HasSpaces, PlanTraceObject};
+
+use super::mutator::ALLOCATOR_MAPPING;
 
 #[derive(HasSpaces, PlanTraceObject)]
 pub struct GenMarkSweep<VM: VMBinding> {
@@ -25,69 +27,86 @@ pub const GENMS_CONSTRAINTS: PlanConstraints = crate::plan::generational::GEN_CO
 
 impl<VM: VMBinding> Plan  for GenMarkSweep<VM> {
     fn constraints(&self) -> &'static PlanConstraints {
-        todo!()
+        &GENMS_CONSTRAINTS
     }
 
     fn base(&self) -> &crate::plan::global::BasePlan<Self::VM> {
-        todo!()
+        &self.gen.common.base
     }
 
     fn base_mut(&mut self) -> &mut crate::plan::global::BasePlan<Self::VM> {
-        todo!()
+        &mut self.gen.common.base
     }
 
     fn schedule_collection(&'static self, _scheduler: &crate::scheduler::GCWorkScheduler<Self::VM>) {
-        todo!()
+        // let is_full_heap = self.requires_full_heap_collection();
+        // if is_full_heap {
+        //     scheduler.schedule_common_work::<GenMarkSweep
+        // }
     }
 
     fn get_allocator_mapping(&self) -> &'static enum_map::EnumMap<crate::AllocationSemantics, crate::util::alloc::AllocatorSelector> {
-        todo!()
+        &ALLOCATOR_MAPPING
     }
 
     fn prepare(&mut self, tls: crate::util::VMWorkerThread) {
-        todo!()
+        let full_heap = !self.gen.is_current_gc_nursery();
+        self.gen.prepare(tls);
+        if full_heap {
+            self.ms_space_mut().prepare()
+        }
     }
 
     fn release(&mut self, tls: crate::util::VMWorkerThread) {
-        todo!()
+        let full_heap = !self.is_current_gc_nursery();
+        self.gen.release(tls);
+        if full_heap {
+            self.ms_space_mut().release();
+        }
     }
 
     fn collection_required(&self, space_full: bool, space: Option<crate::util::heap::SpaceStats<Self::VM>>) -> bool {
-        todo!()
+        // TODO: remove
+        return false;
+        self.gen.collection_required(self, space_full, space)
     }
 
     fn get_used_pages(&self) -> usize {
-        todo!()
+        self.gen.get_used_pages() + self.ms_space().reserved_pages()
+    }
+
+    fn common(&self) -> &CommonPlan<VM> {
+        &self.gen.common
     }
 }
 
 impl<VM: VMBinding> GenerationalPlan for GenMarkSweep<VM> {
     fn is_current_gc_nursery(&self) -> bool {
-        todo!()
+       self.gen.is_current_gc_nursery()
     }
 
     fn is_object_in_nursery(&self, object: crate::util::ObjectReference) -> bool {
-        todo!()
+        self.gen.nursery.in_space(object)
     }
 
     fn is_address_in_nursery(&self, addr: crate::util::Address) -> bool {
-        todo!()
+        self.gen.nursery.address_in_space(addr)
     }
 
     fn get_mature_physical_pages_available(&self) -> usize {
-        todo!()
+        self.ms_space().available_physical_pages()
     }
 
     fn get_mature_reserved_pages(&self) -> usize {
-        todo!()
+        self.ms_space().reserved_pages()
     }
 
     fn last_collection_full_heap(&self) -> bool {
-        todo!()
+        self.gen.last_collection_full_heap()
     }
 
     fn force_full_heap_collection(&self) {
-        todo!()
+        self.gen.force_full_heap_collection()
     }
 }
 
@@ -98,7 +117,7 @@ impl<VM: VMBinding> GenerationalPlanExt<VM> for GenMarkSweep<VM> {
         object: crate::util::ObjectReference,
         worker: &mut crate::scheduler::GCWorker<VM>,
     ) -> crate::util::ObjectReference {
-        todo!()
+        self.gen.trace_object_nursery(queue, object, worker)
     }
 }
 
@@ -131,6 +150,10 @@ impl<VM: VMBinding> GenMarkSweep<VM> {
 
     pub fn ms_space(&self) -> &MarkSweepSpace<VM> {
         &self.ms
+    }
+
+    pub fn ms_space_mut(&mut self) -> &mut MarkSweepSpace<VM> {
+        &mut self.ms
     }
 }
 

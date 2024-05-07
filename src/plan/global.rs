@@ -47,6 +47,9 @@ pub fn create_mutator<VM: VMBinding>(
         PlanSelector::GenImmix => {
             crate::plan::generational::immix::mutator::create_genimmix_mutator(tls, mmtk)
         }
+        PlanSelector::GenMarkSweep => {
+            crate::plan::generational::marksweep::mutator::create_genmarksweep_mutator(tls, mmtk)
+        }
         PlanSelector::MarkSweep => crate::plan::marksweep::mutator::create_ms_mutator(tls, mmtk),
         PlanSelector::Immix => crate::plan::immix::mutator::create_immix_mutator(tls, mmtk),
         PlanSelector::PageProtect => {
@@ -75,6 +78,8 @@ pub fn create_plan<VM: VMBinding>(
         PlanSelector::GenCopy => Box::new(crate::plan::generational::copying::GenCopy::new(args))
             as Box<dyn Plan<VM = VM>>,
         PlanSelector::GenImmix => Box::new(crate::plan::generational::immix::GenImmix::new(args))
+            as Box<dyn Plan<VM = VM>>,
+        PlanSelector::GenMarkSweep => Box::new(crate::plan::generational::marksweep::GenMarkSweep::new(args))
             as Box<dyn Plan<VM = VM>>,
         PlanSelector::MarkSweep => {
             Box::new(crate::plan::marksweep::MarkSweep::new(args)) as Box<dyn Plan<VM = VM>>

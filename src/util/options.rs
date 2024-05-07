@@ -39,6 +39,8 @@ pub enum PlanSelector {
     GenCopy,
     /// A generational collector that uses a copying nursery, and Immix as its mature space.
     GenImmix,
+    /// A generational collector that uses a copying nursery, and MarkSweep as its mature space.
+    GenMarkSweep,
     /// A mark-sweep collector, which marks live objects and sweeps dead objects during GC.
     MarkSweep,
     /// A debugging collector that allocates memory at page granularity, and protects pages for dead objects
