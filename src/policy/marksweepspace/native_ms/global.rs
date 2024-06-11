@@ -3,13 +3,10 @@ use std::sync::Arc;
 use atomic::Ordering;
 
 use crate::{
-    policy::{marksweepspace::native_ms::*, sft::GCWorkerMutRef},
+    policy::{copy_context::PolicyCopyContext, marksweepspace::native_ms::*, sft::GCWorkerMutRef},
     scheduler::{GCWorkScheduler, GCWorker},
     util::{
-        copy::CopySemantics,
-        heap::FreeListPageResource,
-        metadata::{self, side_metadata::SideMetadataSpec, MetadataSpec},
-        ObjectReference,
+        alloc::allocator::AllocatorContext, copy::CopySemantics, heap::FreeListPageResource, metadata::{self, side_metadata::SideMetadataSpec, MetadataSpec}, Address, ObjectReference
     },
     vm::VMBinding,
 };
@@ -379,3 +376,50 @@ impl<VM: VMBinding> GCWork<VM> for SweepChunk<VM> {
         }
     }
 }
+
+use crate::util::alloc::Allocator;
+use crate::util::alloc::BumpAllocator;
+use crate::util::opaque_pointer::VMWorkerThread;
+
+/// Copy allocator for MarkSweepSpace
+pub struct MarkSweepSpaceCopyContext<VM: VMBinding> {
+    copy_allocator: BumpAllocator<VM>,
+}
+
+impl<VM: VMBinding> PolicyCopyContext for MarkSweepSpaceCopyContext<VM> {
+    type VM = VM;
+
+    fn prepare(&mut self) {}
+
+    fn release(&mut self) {}
+
+    fn alloc_copy(
+        &mut self,
+        _original: ObjectReference,
+        bytes: usize,
+        align: usize,
+        offset: usize,
+    ) -> Address {
+        self.copy_allocator.alloc(bytes, align, offset)
+    }
+}
+
+impl<VM: VMBinding> MarkSweepSpaceCopyContext<VM> {
+    pub(crate) fn new(
+        tls: VMWorkerThread,
+        context: Arc<AllocatorContext<VM>>,
+        ms: &'static MarkSweepSpace<VM>,
+    ) -> Self {
+        MarkSweepSpaceCopyContext {
+            copy_allocator: BumpAllocator::new(tls.0, ms, context),
+        }
+    }
+}
+
+impl<VM: VMBinding> MarkSweepSpaceCopyContext<VM> {
+    pub fn rebind(&mut self, space: &MarkSweepSpace<VM>) {
+        self.copy_allocator
+            .rebind(unsafe { &*{ space as *const _ } });
+    }
+}
+
