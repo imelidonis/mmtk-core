@@ -10,6 +10,8 @@ use crate::plan::generational::global::{CommonGenPlan, GenerationalPlanExt};
 
 use mmtk_macros::{HasSpaces, PlanTraceObject};
 
+use super::gc_work::GenMarkSweepGCWorkContext;
+use super::gc_work::GenMarkSweepNurseryGCWorkContext;
 use super::mutator::ALLOCATOR_MAPPING;
 
 #[derive(HasSpaces, PlanTraceObject)]
@@ -50,11 +52,13 @@ impl<VM: VMBinding> Plan for GenMarkSweep<VM> {
         &mut self.gen.common.base
     }
 
-    fn schedule_collection(&'static self, _scheduler: &crate::scheduler::GCWorkScheduler<Self::VM>) {
-        // let is_full_heap = self.requires_full_heap_collection();
-        // if is_full_heap {
-        //     scheduler.schedule_common_work::<GenMarkSweep
-        // }
+    fn schedule_collection(&'static self, scheduler: &crate::scheduler::GCWorkScheduler<Self::VM>) {
+        let is_full_heap = self.requires_full_heap_collection();
+        if is_full_heap {
+            scheduler.schedule_common_work::<GenMarkSweepGCWorkContext<VM>>(self);
+        } else {
+            scheduler.schedule_common_work::<GenMarkSweepNurseryGCWorkContext<VM>>(self);
+        }
     }
 
     fn get_allocator_mapping(&self) -> &'static enum_map::EnumMap<crate::AllocationSemantics, crate::util::alloc::AllocatorSelector> {
@@ -62,7 +66,7 @@ impl<VM: VMBinding> Plan for GenMarkSweep<VM> {
     }
 
     fn prepare(&mut self, tls: crate::util::VMWorkerThread) {
-        let full_heap = !self.gen.is_current_gc_nursery();
+        let full_heap = !self.is_current_gc_nursery();
         self.gen.prepare(tls);
         if full_heap {
             self.ms_space_mut().prepare()
@@ -77,10 +81,17 @@ impl<VM: VMBinding> Plan for GenMarkSweep<VM> {
         }
     }
 
+    fn end_of_gc(&mut self, _tls: crate::util::VMWorkerThread) {
+        self.gen
+            .set_next_gc_full_heap(CommonGenPlan::should_next_gc_be_full_heap(self))
+    }
+
     fn collection_required(&self, space_full: bool, space: Option<crate::util::heap::SpaceStats<Self::VM>>) -> bool {
-        // TODO: remove
-        return false;
         self.gen.collection_required(self, space_full, space)
+    }
+
+    fn get_collection_reserved_pages(&self) -> usize {
+        self.gen.get_collection_reserved_pages() + self.ms_space().reserved_pages()
     }
 
     fn get_used_pages(&self) -> usize {
@@ -89,6 +100,10 @@ impl<VM: VMBinding> Plan for GenMarkSweep<VM> {
 
     fn common(&self) -> &CommonPlan<VM> {
         &self.gen.common
+    }
+
+    fn generational(&self) -> Option<&dyn GenerationalPlan<VM = Self::VM>> {
+        Some(self)
     }
 }
 
