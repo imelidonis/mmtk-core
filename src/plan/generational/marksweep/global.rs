@@ -2,7 +2,7 @@ use crate::plan::global::{CommonPlan, CreateSpecificPlanArgs};
 use crate::plan::{CreateGeneralPlanArgs, GenerationalPlan};
 use crate::policy::marksweepspace::native_ms::MarkSweepSpace;
 use crate::policy::space::Space;
-use crate::util::copy::CopySemantics;
+use crate::util::copy::{CopyConfig, CopySelector, CopySemantics};
 use crate::util::heap::VMRequest;
 use crate::Plan;
 use crate::{plan::PlanConstraints, vm::VMBinding};
@@ -14,9 +14,7 @@ use super::mutator::ALLOCATOR_MAPPING;
 
 #[derive(HasSpaces, PlanTraceObject)]
 pub struct GenMarkSweep<VM: VMBinding> {
-    // TODO: not sure...
     #[space]
-    #[copy_semantics(CopySemantics::Mature)]
     ms: MarkSweepSpace<VM>,
     #[parent]
     pub gen: CommonGenPlan<VM>,
@@ -25,9 +23,23 @@ pub struct GenMarkSweep<VM: VMBinding> {
 /// The plan constraints for the generational mark sweep plan.
 pub const GENMS_CONSTRAINTS: PlanConstraints = crate::plan::generational::GEN_CONSTRAINTS;
 
-impl<VM: VMBinding> Plan  for GenMarkSweep<VM> {
+impl<VM: VMBinding> Plan for GenMarkSweep<VM> {
     fn constraints(&self) -> &'static PlanConstraints {
         &GENMS_CONSTRAINTS
+    }
+
+    fn create_copy_config(&'static self) -> CopyConfig<Self::VM> {
+        use enum_map::enum_map;
+        CopyConfig {
+            copy_mapping: enum_map! {
+                CopySemantics::PromoteToMature => CopySelector::MarkSweepSpace(0),
+                _ => CopySelector::Unused,
+            },
+            space_mapping: vec![
+                (CopySelector::MarkSweepSpace(0), self.ms_space())
+            ],
+            constraints: &GENMS_CONSTRAINTS,
+        }
     }
 
     fn base(&self) -> &crate::plan::global::BasePlan<Self::VM> {
